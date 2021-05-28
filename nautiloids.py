@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from time import time
 
 # import math
-from math import exp
+from math import exp, sqrt
 import numpy
 
 # import scipy to read wavfiles
@@ -72,16 +72,11 @@ class Nautiloid(list):
 
         # for each lag
         autocorrelation = []
-        for lag, amplitude in enumerate(snippet):
-
-            # create lag set
-            difference = finish - start
-            lags = [number + difference for number in numbers]
+        for lag, _ in enumerate(snippet):
 
             # create data points
-            pairs = [(number, lag) for number, lag in zip(numbers, lags) if lag in almanac.keys()]
-            independents = [almanac[number] for number, _ in pairs]
-            dependents = [almanac[number] for _, number in pairs]
+            independents = snippet[:len(snippet) - lag]
+            dependents = snippet[lag:]
 
             # compute pearson's correlation coefficient
             pearson = self._peer(independents, dependents)
@@ -266,12 +261,13 @@ class Nautiloid(list):
 
         return None
 
-    def undulate(self, name, size):
+    def undulate(self, name, size, start=0):
         """Perform autocorrelation for a song.
 
         Arguments:
             name: (partial) name of song
             size: number of frames
+            start: starting position
 
         Returns:
             None
@@ -279,9 +275,11 @@ class Nautiloid(list):
 
         # get the song file
         frequency, song = self._listen(name)
+        print('frequency: {} frames / s'.format(frequency))
+        print('length: {} frames, {} seconds'.format(len(song), len(song) / frequency))
 
         # get the first channel snippet
-        snippet = song[:size, 0]
+        snippet = song[start:start + size, 0]
 
         # perform autocorrelation
         autocorrelation = self._autocorrelate(snippet)
@@ -291,17 +289,23 @@ class Nautiloid(list):
 
         # create the line
         line = (spectrum, autocorrelation, 'b--', 'auto')
+        lines = [line]
+
+        # add plot?
+        lineii = (spectrum, snippet, 'g--', 'snippet')
+        lines.append(lineii)
 
         # add labels
         title = 'autocorrelation of {}'.format(name)
         independent = 'frequency'
         dependent = 'correlation'
+        texts = [title, independent, dependent]
 
         # make destination
         destination = 'plots/{}.png'.format(name)
 
         # draw it
-        self._draw([line], [title, independent, dependent], destination)
+        self._draw(lines, texts, destination)
 
         return None
 
