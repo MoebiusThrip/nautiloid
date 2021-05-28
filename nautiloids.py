@@ -1,6 +1,13 @@
 # import reload
 from importlib import reload
 
+# import ox
+import os
+
+# import datetime
+from datetime import datetime, timedelta
+from time import time
+
 # import math
 from math import exp
 import numpy
@@ -27,6 +34,9 @@ class Nautiloid(list):
             directory: str, directory path
         """
 
+        # set time
+        self.now = time()
+
         # define directory of songs
         self.directory = directory
 
@@ -47,11 +57,11 @@ class Nautiloid(list):
 
         return representation
 
-    def _autocorrelate(self, frame):
+    def _autocorrelate(self, snippet):
         """Perform autocorrelation analysis of the data.
 
         Arguments:
-            frame: snippet of data
+            snippet: snippet of data
 
         Returns:
             list of floats
@@ -61,9 +71,8 @@ class Nautiloid(list):
         self._stamp('autocorrelating...', initial=True)
 
         # for each lag
-        start = numbers[0]
         autocorrelation = []
-        for finish in numbers:
+        for lag, amplitude in enumerate(snippet):
 
             # create lag set
             difference = finish - start
@@ -222,6 +231,79 @@ class Nautiloid(list):
 
         return paths
 
+    def _stamp(self, message, initial=False):
+        """Start timing a block of code, and print results with a message.
+
+        Arguments:
+            message: str
+            initial: boolean, initial message of block?
+
+        Returns:
+            None
+        """
+
+        # get final time
+        final = time()
+
+        # calculate duration and reset time
+        duration = round(final - self.now, 5)
+        self.now = final
+
+        # if iniital message
+        if initial:
+
+            # add newline
+            message = '\n' + message
+
+        # if not an initial message
+        if not initial:
+
+            # print duration
+            print('took {} seconds.'.format(duration))
+
+        # begin new block
+        print(message)
+
+        return None
+
+    def undulate(self, name, size):
+        """Perform autocorrelation for a song.
+
+        Arguments:
+            name: (partial) name of song
+            size: number of frames
+
+        Returns:
+            None
+        """
+
+        # get the song file
+        frequency, song = self._listen(name)
+
+        # get the first channel snippet
+        snippet = song[:size, 0]
+
+        # perform autocorrelation
+        autocorrelation = self._autocorrelate(snippet)
+
+        # make spectrum
+        spectrum = [frequency / (index + 1) for index in range(size)]
+
+        # create the line
+        line = (spectrum, autocorrelation, 'b--', 'auto')
+
+        # add labels
+        title = 'autocorrelation of {}'.format(name)
+        independent = 'frequency'
+        dependent = 'correlation'
+
+        # make destination
+        destination = 'plots/{}.png'.format(name)
+
+        # draw it
+        self._draw([line], [title, independent, dependent], destination)
+
+        return None
 
 
 #
