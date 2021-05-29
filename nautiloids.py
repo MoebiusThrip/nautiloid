@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from time import time
 
 # import math
-from math import exp, sqrt
+from math import exp, sqrt, sin, cos, pi
 import numpy
 
 # import scipy to read wavfiles
@@ -112,8 +112,8 @@ class Nautiloid(list):
 
         # calculate margins
         margin = max([head - median, median - tail])
-        top = median + 2.5 * margin
-        bottom = median - 2.5 * margin
+        top = median + 5 * margin
+        bottom = median - 5 * margin
 
         # set y-axis range
         pyplot.gca().set_ylim(bottom, top)
@@ -261,8 +261,31 @@ class Nautiloid(list):
 
         return None
 
+    def _transform(self, snippet):
+        """Calculate the fourier transform.
+
+        Arguments:
+            snippet: list of ints
+
+        Returns:
+            list of floats
+        """
+
+        # get the total number of frames
+        number = len(snippet)
+
+        # calculate each point of the fourier
+        fourier = []
+        for wave, _ in enumerate(snippet):
+
+            # caluculate summataion
+            terms = [amplitude * cos(2 * pi * wave * index / number) for index, amplitude in enumerate(snippet)]
+            fourier.append(sum(terms))
+
+        return fourier
+
     def undulate(self, name, size, start=0):
-        """Perform autocorrelation for a song.
+        """Get the frequency spectrum for a snippet of a song.
 
         Arguments:
             name: (partial) name of song
@@ -281,24 +304,24 @@ class Nautiloid(list):
         # get the first channel snippet
         snippet = song[start:start + size, 0]
 
-        # perform autocorrelation
-        autocorrelation = self._autocorrelate(snippet)
+        # get the fourier transform
+        fourier = self._transform(snippet)
 
-        # make spectrum
-        spectrum = [frequency / (index + 1) for index in range(size)]
+        # make spectrum from frequency
+        spectrum = [frequency / (index + 1) for index, _ in enumerate(snippet)]
 
         # create the line
-        line = (spectrum, autocorrelation, 'b--', 'auto')
+        line = (spectrum, fourier, 'b-', 'auto')
         lines = [line]
 
         # add plot?
-        lineii = (spectrum, snippet, 'g--', 'snippet')
+        lineii = (spectrum, snippet, 'g-', 'snippet')
         lines.append(lineii)
 
         # add labels
-        title = 'autocorrelation of {}'.format(name)
+        title = 'fourier transform of {}'.format(name)
         independent = 'frequency'
-        dependent = 'correlation'
+        dependent = 'amplitude'
         texts = [title, independent, dependent]
 
         # make destination
