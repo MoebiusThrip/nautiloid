@@ -87,36 +87,42 @@ class Nautiloid(list):
 
         return autocorrelation
 
-    def _draw(self, lines, text, destination):
+    def _draw(self, lines, texts, destination):
         """Draw a group of lines.
 
         Arguments:
             lines: list of tuples
-            text: list of str
+            texts: list of str
             destination: str, filepath
 
         Returns:
             None
         """
 
-        # begin figure
+        # begin plot
         pyplot.clf()
+        figure = pyplot.figure()
 
-        # collect all data points
-        data = [float(entry) for line in lines for entry in line[1]]
+        # create a grid for combining subplots
+        grid = figure.add_gridspec(ncols=1, nrows=3, width_ratios=[1], height_ratios=[2, 10, 2])
 
-        # calculate quartiles
-        head = numpy.percentile(data, 75)
-        median = numpy.percentile(data, 50)
-        tail = numpy.percentile(data, 25)
+        # defie the axes
+        axes = [figure.add_subplot(grid[0, :])]
+        axes.append(figure.add_subplot(grid[1, :]))
+        axes.append(figure.add_subplot(grid[2, :]))
 
-        # calculate margins
-        margin = max([head - median, median - tail])
-        top = median + 5 * margin
-        bottom = median - 5 * margin
+        # adjust margins
+        figure.subplots_adjust(hspace=0.0, wspace=0.5)
 
-        # set y-axis range
-        pyplot.gca().set_ylim(bottom, top)
+        # determine all entries
+        data = [float(datum) for line in lines for datum in line[1]]
+
+        # define quantile cutoffs for head and tail
+        quantile = 2
+        maximum = max(data)
+        head = numpy.percentile(data, 100 - quantile)
+        tail = numpy.percentile(data, quantile)
+        minimum = min(data)
 
         # plot all lines
         for abscissa, ordinate, style, label in lines:
@@ -125,27 +131,40 @@ class Nautiloid(list):
             if label:
 
                 # plot with a label
-                pyplot.plot(abscissa, ordinate, style, label=label)
+                axes[0].plot(abscissa, ordinate, style)
+                axes[1].plot(abscissa, ordinate, style, label=label)
+                axes[2].plot(abscissa, ordinate, style)
 
             # otherwise
             else:
 
                 # plot without a label
-                pyplot.plot(abscissa, ordinate, style)
+                axes[0].plot(abscissa, ordinate, style)
+                axes[1].plot(abscissa, ordinate, style)
+                axes[2].plot(abscissa, ordinate, style)
 
-        # add legend
-        pyplot.legend(loc='lower right')
+        # set axis limits
+        axes[0].set_ylim(head, maximum)
+        axes[1].set_ylim(tail, head)
+        axes[2].set_ylim(minimum, tail)
 
         # parse text, padding with blanks
-        text = text + ['', '', '']
-        title, independent, dependent = text[:3]
+        texts = texts + ['', '', '']
+        title, independent, dependent = texts[:3]
 
         # add labels
-        pyplot.title(title)
-        pyplot.xlabel(independent)
-        pyplot.ylabel(dependent)
+        axes[0].set_title(title)
+        axes[1].set_ylabel(dependent)
+        axes[2].set_xlabel(independent)
 
-        # save to destination
+        # remove xtick labels in head and main
+        axes[0].set_xticklabels([" "] * len(axes[1].get_xticks()))
+        axes[1].set_xticklabels([" "] * len(axes[1].get_xticks()))
+
+        # add legend
+        figure.legend(loc='upper right')
+
+        # save the figure
         pyplot.savefig(destination)
 
         return None
@@ -284,13 +303,14 @@ class Nautiloid(list):
 
         return fourier
 
-    def undulate(self, name, size, start=0):
+    def undulate(self, name, size, start=0, hertz=4000):
         """Get the frequency spectrum for a snippet of a song.
 
         Arguments:
             name: (partial) name of song
             size: number of frames
             start: starting position
+            hertz: highest frequency in hertz to plot
 
         Returns:
             None
@@ -310,12 +330,15 @@ class Nautiloid(list):
         # make spectrum from frequency
         spectrum = [frequency / (index + 1) for index, _ in enumerate(snippet)]
 
+        # get index closet to set hertz level
+        musical = [index for index, wave in enumerate(spectrum) if wave < hertz][0]
+
         # create the line
-        line = (spectrum, fourier, 'b-', 'auto')
+        line = (spectrum[musical:], fourier[musical:], 'b-', 'fourier')
         lines = [line]
 
         # add plot?
-        lineii = (spectrum, snippet, 'g-', 'snippet')
+        lineii = (spectrum[musical:], snippet[musical:], 'g-', 'snippet')
         lines.append(lineii)
 
         # add labels
@@ -329,6 +352,14 @@ class Nautiloid(list):
 
         # draw it
         self._draw(lines, texts, destination)
+
+        # search for peaks
+        peaking = lambda series, index: series[index] > series[index - 1] and series[index] > series[index + 1]
+        peaks = [index + 1 for index, _ in enumerate(fourier[1:-1])if peaking(fourier, index + 1)]
+
+        # print the frequencies
+        notes = [spectrum[peak] for peak in peaks if spectrum[peak] > 500]
+        [print('{} Htz'.format(note)) for note in notes]
 
         return None
 
