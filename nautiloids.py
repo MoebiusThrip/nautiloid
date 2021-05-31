@@ -448,7 +448,10 @@ class Nautiloid(list):
         fourier = []
 
         # for each measure
-        for measure in list(self):
+        for index, measure in enumerate(self):
+
+            # print
+            print('listening to measure {}...'.forrmat(index))
 
             # analyze each sixteenth note
             analysis = [self._transform(sixteenth) for sixteenth in measure]
@@ -457,12 +460,8 @@ class Nautiloid(list):
         # add to record
         self.fourier = fourier
 
+        return None
 
-
-
-
-        # get the first channel snippet
-        snippet = song[start:start + size, 0]
 
 
         # make spectrum from frequency
