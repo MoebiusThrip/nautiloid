@@ -40,6 +40,18 @@ class Nautiloid(list):
         # define directory of songs
         self.directory = directory
 
+        # tune the frequencies
+        self.forks = {}
+        self._tune()
+
+        # default song parameters
+        self.measures = 40
+        self.rate = 0
+        self.length = 0
+
+        # store fourier analysis
+        self.fourier = []
+
         return
 
     def __repr__(self):
@@ -86,6 +98,25 @@ class Nautiloid(list):
         self._stamp('autocorrelated.')
 
         return autocorrelation
+
+    def _dice(self, sequence, number):
+        """Dice a sequence into a number of chunks.
+
+        Arguments:
+            sequence: list to floats
+            number: int, number pieces
+
+        Returns:
+            list of list of floats
+        """
+
+        # determine chunk size
+        size = intt(sequence / number)
+
+        # make pieces
+        pieces = [sequence[size * index: size + size * index] for index in range(number)]
+
+        return pieces
 
     def _draw(self, lines, texts, destination):
         """Draw a group of lines.
@@ -169,6 +200,24 @@ class Nautiloid(list):
 
         return None
 
+    def _forget(self):
+        """Depopulate current song.
+
+        Arguments:
+            None
+
+        Returns:
+            None
+        """
+
+        # as long as there is memory
+        while len(self) > 0:
+
+            # forget
+            self.pop()
+
+        return None
+
     def _listen(self, name):
         """Get a wave file by listening to a song.
 
@@ -179,6 +228,9 @@ class Nautiloid(list):
             None
         """
 
+        # forget current song
+        self._forget()
+
         # get all paths
         paths = self._see(self.directory)
 
@@ -186,9 +238,23 @@ class Nautiloid(list):
         song = [path for path in paths if name.lower() in path.lower()][0]
 
         # open the wave file
-        frequency, data = wavfile.read(song)
+        rate, data = wavfile.read(song)
 
-        return frequency, data
+        # set song parametesr
+        self.rate = rate
+        self.length = len(data)
+
+        # combine both channels
+        data = [sum(datum) for datum in data]
+
+        # chop into measures and then into sixteenths
+        measures = self._dice(data, self.measures)
+        sixteenths = [self._dice(measure, 16) for measure in measures]
+
+        # populate
+        [self.append(measure) for measure in sixteenths]
+
+        return None
 
     def _peer(self, independents, dependents):
         """Calculate pearson's correlation coefficient between two sets.
@@ -229,6 +295,22 @@ class Nautiloid(list):
                 pearson = covariance / sqrt(variance * varianceii)
 
         return pearson
+
+    def _resonate(self, note):
+        """Find the closest matches to each frequency.
+
+        Arguments:
+            note: float, frequency of note in hertz
+
+        Returns:
+            list of (str, float) tuples
+        """
+
+        # score each entry in the tuning forks and sort based on closeness
+        scores = [(name, round(note / frequency, 2)) for name, frequency in self.forks.items()]
+        scores.sort(key=lambda item: (item[1] - 1) ** 2)
+
+        return scores
 
     def _see(self, directory):
         """See all the paths in a directory.
@@ -280,6 +362,25 @@ class Nautiloid(list):
 
         return None
 
+    def _transcribe(self, path):
+        """Transcribe the text file at the path.
+
+        Arguments:
+            path: str, file path
+
+        Returns:
+            list of str
+        """
+
+        # read in file pointer
+        with open(path, 'r') as pointer:
+
+            # read in text and eliminate endlines
+            lines = pointer.readlines()
+            lines = [line.replace('\n', '') for line in lines]
+
+        return lines
+
     def _transform(self, snippet):
         """Calculate the fourier transform.
 
@@ -303,6 +404,28 @@ class Nautiloid(list):
 
         return fourier
 
+    def _tune(self):
+        """Establish frequencies.
+
+        Arguments:
+            None
+
+        Returns:
+            None
+
+        Populates:
+            self.forks
+        """
+
+        # transcribe the frequency table, skipping the header
+        table = self._transcribe('theory/frequencies.txt')[1:]
+
+        # create tuning forks
+        forks = {note.strip(): float(frequency) for note, frequency, _ in [entry.split('\t') for entry in table]}
+        self.forks.update(forks)
+
+        return None
+
     def undulate(self, name, size, start=0, hertz=4000):
         """Get the frequency spectrum for a snippet of a song.
 
@@ -316,16 +439,31 @@ class Nautiloid(list):
             None
         """
 
-        # get the song file
-        frequency, song = self._listen(name)
-        print('frequency: {} frames / s'.format(frequency))
-        print('length: {} frames, {} seconds'.format(len(song), len(song) / frequency))
+        # listen to the song
+        self._listen(name)
+        print('length: {} frames, {} seconds'.format(self.length, round(self.length / self.rate), 2))
+        print('sampling rate: {} frames / s'.format(self.rate))
+
+        # begin fourier analysis
+        fourier = []
+
+        # for each measure
+        for measure in list(self):
+
+            # analyze each sixteenth note
+            analysis = [self._transform(sixteenth) for sixteenth in measure]
+            fourier.append(analysis)
+
+        # add to record
+        self.fourier = fourier
+
+
+
+
 
         # get the first channel snippet
         snippet = song[start:start + size, 0]
 
-        # get the fourier transform
-        fourier = self._transform(snippet)
 
         # make spectrum from frequency
         spectrum = [frequency / (index + 1) for index, _ in enumerate(snippet)]
@@ -359,7 +497,8 @@ class Nautiloid(list):
 
         # print the frequencies
         notes = [spectrum[peak] for peak in peaks if spectrum[peak] > 500]
-        [print('{} Htz'.format(note)) for note in notes]
+        scores = [self._resonate(note) for note in notes]
+        [print('{} Htz: {} ({})'.format(note, *score[0])) for note, score in zip(notes, scores)]
 
         return None
 
