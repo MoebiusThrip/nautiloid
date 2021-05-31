@@ -52,6 +52,9 @@ class Nautiloid(list):
         # store fourier analysis
         self.fourier = []
 
+        # analytical parameters
+        self.tolerance = 0.1
+
         return
 
     def __repr__(self):
@@ -217,6 +220,9 @@ class Nautiloid(list):
             self.pop()
 
         return None
+
+    def _ink(self, measure, sixteenth):
+        """Draw the spectrum for the particular sixteenth."""
 
     def _listen(self, name):
         """Get a wave file by listening to a song.
