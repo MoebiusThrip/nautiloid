@@ -42,6 +42,7 @@ class Nautiloid(list):
 
         # tune the frequencies
         self.forks = {}
+        self.band = (0, 0)
         self._tune()
 
         # default song parameters
@@ -114,7 +115,7 @@ class Nautiloid(list):
         """
 
         # determine chunk size
-        size = intt(sequence / number)
+        size = int(len(sequence) / number)
 
         # make pieces
         pieces = [sequence[size * index: size + size * index] for index in range(number)]
@@ -221,8 +222,30 @@ class Nautiloid(list):
 
         return None
 
-    def _ink(self, measure, sixteenth):
-        """Draw the spectrum for the particular sixteenth."""
+    def _lay(self):
+        """Lay a grid based on the song.
+
+        Arguments:
+            None
+
+        Returns:
+            numpy array
+        """
+
+        # timestamp
+        self._stamp('laying grid...', initial=True)
+
+        # get maximum length
+        length = max([len(sixteenth) for measure in list(self) for sixteenth in measure])
+
+        # make grid
+        grid = [[index * indexii for indexii in range(length)] for index in range(length)]
+        grid = numpy.array(grid)
+
+        # timestamp
+        self._stamp('layed.')
+
+        return grid
 
     def _listen(self, name):
         """Get a wave file by listening to a song.
@@ -243,6 +266,9 @@ class Nautiloid(list):
         # get all paths with the name, assuming the first is correct
         song = [path for path in paths if name.lower() in path.lower()][0]
 
+        # start clock
+        self._stamp('listening to {}...'.format(song), initial=True)
+
         # open the wave file
         rate, data = wavfile.read(song)
 
@@ -259,6 +285,9 @@ class Nautiloid(list):
 
         # populate
         [self.append(measure) for measure in sixteenths]
+
+        # timestamp
+        self._stamp('listened.')
 
         return None
 
@@ -387,11 +416,12 @@ class Nautiloid(list):
 
         return lines
 
-    def _transform(self, snippet):
+    def _transform(self, snippet, grid):
         """Calculate the fourier transform.
 
         Arguments:
             snippet: list of ints
+            grid: 2-D number area of index
 
         Returns:
             list of floats
@@ -400,13 +430,23 @@ class Nautiloid(list):
         # get the total number of frames
         number = len(snippet)
 
-        # calculate each point of the fourier
-        fourier = []
-        for wave, _ in enumerate(snippet):
+        # subset grid in case length differs
+        grid = grid[:number, :number]
 
-            # caluculate summataion
-            terms = [amplitude * cos(2 * pi * wave * index / number) for index, amplitude in enumerate(snippet)]
-            fourier.append(sum(terms))
+        # multiple by 2 pi / N
+        cycles = grid * (2 * pi / number)
+
+        # take the cosine
+        cosines = numpy.cos(cycles)
+
+        # get amplitudes
+        amplitudes = numpy.tile(snippet, (number, 1))
+
+        # multiple to get terms
+        terms = cosines * amplitudes
+
+        # sum all terrms
+        fourier = terms.sum(axis=1)
 
         return fourier
 
@@ -430,16 +470,19 @@ class Nautiloid(list):
         forks = {note.strip(): float(frequency) for note, frequency, _ in [entry.split('\t') for entry in table]}
         self.forks.update(forks)
 
+        # get upper and lower frequency ranges
+        self.band = (min(forks.values()), max(forks.values()))
+
         return None
 
-    def undulate(self, name, size, start=0, hertz=4000):
+    def ink(self, measure, sixteenth):
+        """Draw the spectrum for the particular sixteenth."""
+
+    def undulate(self, name):
         """Get the frequency spectrum for a snippet of a song.
 
         Arguments:
             name: (partial) name of song
-            size: number of frames
-            start: starting position
-            hertz: highest frequency in hertz to plot
 
         Returns:
             None
@@ -450,62 +493,76 @@ class Nautiloid(list):
         print('length: {} frames, {} seconds'.format(self.length, round(self.length / self.rate), 2))
         print('sampling rate: {} frames / s'.format(self.rate))
 
+        # compute index grid
+        grid = self._lay()
+
         # begin fourier analysis
         fourier = []
 
         # for each measure
         for index, measure in enumerate(self):
 
-            # print
-            print('listening to measure {}...'.forrmat(index))
+            # timestamp
+            self._stamp('transforming measure {} of {}...'.format(index, len(self)), initial=True)
 
             # analyze each sixteenth note
-            analysis = [self._transform(sixteenth) for sixteenth in measure]
-            fourier.append(analysis)
+            analyses = []
+            for indexii, sixteenth in enumerate(measure):
+
+                # perform fourier transform on sixteenth note
+                print('semiquaver {} of 16...'.format(indexii))
+                analysis = self._transform(sixteenth, grid)
+                analyses.append(analysis)
+
+            # add to fourier
+            fourier.append(analyses)
+
+            # timestamp
+            self._stamp('transformed.')
 
         # add to record
         self.fourier = fourier
 
         return None
+        #
+        #
+        #
+        # # make spectrum from frequency
+        # spectrum = [frequency / (index + 1) for index, _ in enumerate(snippet)]
+        #
+        # # get index closet to set hertz level
+        # musical = [index for index, wave in enumerate(spectrum) if wave < hertz][0]
+        #
+        # # create the line
+        # line = (spectrum[musical:], fourier[musical:], 'b-', 'fourier')
+        # lines = [line]
+        #
+        # # add plot?
+        # lineii = (spectrum[musical:], snippet[musical:], 'g-', 'snippet')
+        # lines.append(lineii)
+        #
+        # # add labels
+        # title = 'fourier transform of {}'.format(name)
+        # independent = 'frequency'
+        # dependent = 'amplitude'
+        # texts = [title, independent, dependent]
+        #
+        # # make destination
+        # destination = 'plots/{}.png'.format(name)
+        #
+        # # draw it
+        # self._draw(lines, texts, destination)
+        #
+        # # search for peaks
+        # peaking = lambda series, index: series[index] > series[index - 1] and series[index] > series[index + 1]
+        # peaks = [index + 1 for index, _ in enumerate(fourier[1:-1])if peaking(fourier, index + 1)]
+        #
+        # # print the frequencies
+        # notes = [spectrum[peak] for peak in peaks if spectrum[peak] > 500]
+        # scores = [self._resonate(note) for note in notes]
+        # [print('{} Htz: {} ({})'.format(note, *score[0])) for note, score in zip(notes, scores)]
 
-
-
-        # make spectrum from frequency
-        spectrum = [frequency / (index + 1) for index, _ in enumerate(snippet)]
-
-        # get index closet to set hertz level
-        musical = [index for index, wave in enumerate(spectrum) if wave < hertz][0]
-
-        # create the line
-        line = (spectrum[musical:], fourier[musical:], 'b-', 'fourier')
-        lines = [line]
-
-        # add plot?
-        lineii = (spectrum[musical:], snippet[musical:], 'g-', 'snippet')
-        lines.append(lineii)
-
-        # add labels
-        title = 'fourier transform of {}'.format(name)
-        independent = 'frequency'
-        dependent = 'amplitude'
-        texts = [title, independent, dependent]
-
-        # make destination
-        destination = 'plots/{}.png'.format(name)
-
-        # draw it
-        self._draw(lines, texts, destination)
-
-        # search for peaks
-        peaking = lambda series, index: series[index] > series[index - 1] and series[index] > series[index + 1]
-        peaks = [index + 1 for index, _ in enumerate(fourier[1:-1])if peaking(fourier, index + 1)]
-
-        # print the frequencies
-        notes = [spectrum[peak] for peak in peaks if spectrum[peak] > 500]
-        scores = [self._resonate(note) for note in notes]
-        [print('{} Htz: {} ({})'.format(note, *score[0])) for note, score in zip(notes, scores)]
-
-        return None
+        #return None
 
 
 #
