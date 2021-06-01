@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from time import time
 
 # import math
-from math import exp, sqrt, sin, cos, pi
+from math import exp, sqrt, sin, cos, pi, log2
 import numpy
 
 # import scipy to read wavfiles
@@ -42,11 +42,12 @@ class Nautiloid(list):
 
         # tune the frequencies
         self.forks = {}
-        self.band = (0, 0)
+        self.audible = (0, 0)
         self._tune()
 
         # default song parameters
         self.measures = 40
+        self.name = ''
         self.rate = 0
         self.length = 0
 
@@ -122,17 +123,21 @@ class Nautiloid(list):
 
         return pieces
 
-    def _draw(self, lines, texts, destination):
+    def _draw(self, lines, texts, destination, annotations=None):
         """Draw a group of lines.
 
         Arguments:
             lines: list of tuples
             texts: list of str
             destination: str, filepath
+            annotations=None
 
         Returns:
             None
         """
+
+        # set default annotations
+        annotations = annotations or []
 
         # begin plot
         pyplot.clf()
@@ -195,6 +200,14 @@ class Nautiloid(list):
         # remove xtick labels in head and main
         axes[0].set_xticklabels([" "] * len(axes[1].get_xticks()))
         axes[1].set_xticklabels([" "] * len(axes[1].get_xticks()))
+
+        # add annotations
+        for horizontal, vertical, text in annotations:
+
+            # add annotations
+            axes[0].annotation(text, xy=(horizontal, vertical))
+            axes[1].annotation(text, xy=(horizontal, vertical))
+            axes[2].annotation(text, xy=(horizontal, vertical))
 
         # add legend
         figure.legend(loc='upper right')
@@ -272,7 +285,8 @@ class Nautiloid(list):
         # open the wave file
         rate, data = wavfile.read(song)
 
-        # set song parametesr
+        # set song parameters
+        self.name = name
         self.rate = rate
         self.length = len(data)
 
@@ -290,6 +304,25 @@ class Nautiloid(list):
         self._stamp('listened.')
 
         return None
+
+    def _normalize(self, data):
+        """Normalize a list of data to its z-scores.
+
+        Arguments:
+            data: list of floats
+
+        Returns:
+            list of floats
+        """
+
+        # substract mean and divide by standard deviation
+        mean = numpy.average(data)
+        deviation = numpy.std(data)
+
+        # make data
+        normalization = numpy.array([(datum - mean) / deviation for datum in data])
+
+        return normalization
 
     def _peer(self, independents, dependents):
         """Calculate pearson's correlation coefficient between two sets.
@@ -331,7 +364,7 @@ class Nautiloid(list):
 
         return pearson
 
-    def _resonate(self, note):
+    def _resonate(self, frequency, amplitude):
         """Find the closest matches to each frequency.
 
         Arguments:
@@ -341,9 +374,16 @@ class Nautiloid(list):
             list of (str, float) tuples
         """
 
+        # make a score from each note
+        scores = []
+        for name, note in self.forks.items():
+
+            # create score
+            score = (round(frequency, 2), round(amplitude, 2), round(1200 * log2(frequency / note), 2), name)
+            scores.append(score)
+
         # score each entry in the tuning forks and sort based on closeness
-        scores = [(name, round(note / frequency, 2)) for name, frequency in self.forks.items()]
-        scores.sort(key=lambda item: (item[1] - 1) ** 2)
+        scores.sort(key=lambda item: (item[2] - 1) ** 2)
 
         return scores
 
@@ -471,20 +511,101 @@ class Nautiloid(list):
         self.forks.update(forks)
 
         # get upper and lower frequency ranges
-        self.band = (min(forks.values()), max(forks.values()))
+        self.audible = (min(forks.values()), max(forks.values()))
 
         return None
 
-    def ink(self, measure, sixteenth):
+    def forage(self, fourier, spectrum, faintness=0.1):
+        """Find the peaks in the fourier spectrum.
+
+        Arguments:
+            fourier: list of floats
+            spectrum: list of floats
+            faintness: float, the cutoff amplitude for a peak
+
+        Returns:
+            None
+        """
+
+        # search for peaks
+        peaking = lambda series, index: series[index] > series[index - 1] and series[index] > series[index + 1]
+        peaks = [index + 1 for index, _ in enumerate(fourier[1:-1]) if peaking(fourier, index + 1)]
+
+        # find all peaks in audible range and of high enough amplitude
+        peaks = [peak for peak in peaks if fourier[peak] > faintness]
+        peaks = [peak for peak in peaks if self.audible[0] < spectrum[peak] < self.audible[1]]
+
+        # score each peak and print
+        scores = [self._resonate(spectrum[peak], fourier[peak]) for peak in peaks]
+        [print('{} Htz, {} ({}): {}'.format(*score[0])) for score in scores]
+
+        return None
+
+    def ink(self, measure, sixteenth, display=True):
         """Draw the spectrum for the particular sixteenth.
 
         Arguments:
             measure: int, measure index
             sixteenth: int, sixteenth index
+            display: boolean, create plot?
 
         Returns:
             None
         """
+
+        # get snippet and fourier results
+        snippet = self[measure][sixteenth]
+        fourier = self.fourier[measure][sixteenth]
+
+        # convert fourier spectrum to frequencies
+        spectrum = numpy.array([self.rate / (index or 1) for index, _ in enumerate(fourier)])
+
+        # normalize the fourier
+        fourier = [amplitude ** 2 for amplitude in fourier]
+        fourier = self._normalize(fourier)
+
+        # find the notes
+        self.forage(fourier, spectrum)
+
+        # make plot
+        if display:
+
+            # normalize the snippet and reverse
+            snippet = [float(entry) for entry in self._normalize(snippet).data]
+            snippet.reverse()
+            snippet = numpy.array(snippet)
+
+            # get the list of indices for audible range of hearing
+            audibles = [index for index, frequency in enumerate(spectrum) if self.audible[0] < frequency < self.audible[1]]
+
+            # subset the fourier and spectrum
+            fourier = fourier[audibles]
+            spectrum = spectrum[audibles]
+
+            # interpolate spectrum to graph snippet
+            final = spectrum[0]
+            span = (spectrum[0] - spectrum[-1]) / len(snippet)
+            interpolation = [final - index * span for index, amplitude in enumerate(snippet)]
+
+            # create the fourier line
+            line = (spectrum, fourier, 'b-', 'fourier')
+            lines = [line]
+
+            # add plot?
+            lineii = (interpolation, snippet, 'g-', 'snippet')
+            lines.append(lineii)
+
+            # add labels
+            title = 'fourier transform of {}'.format(self.name)
+            independent = 'frequency'
+            dependent = 'amplitude'
+            texts = [title, independent, dependent]
+
+            # make destination
+            destination = 'plots/{}_{}:{}.png'.format(self.name, measure, sixteenth)
+
+            # draw it
+            self._draw(lines, texts, destination)
 
         return None
 
@@ -534,45 +655,7 @@ class Nautiloid(list):
         self.fourier = fourier
 
         return None
-        #
-        #
-        #
-        # # make spectrum from frequency
-        # spectrum = [frequency / (index + 1) for index, _ in enumerate(snippet)]
-        #
-        # # get index closet to set hertz level
-        # musical = [index for index, wave in enumerate(spectrum) if wave < hertz][0]
-        #
-        # # create the line
-        # line = (spectrum[musical:], fourier[musical:], 'b-', 'fourier')
-        # lines = [line]
-        #
-        # # add plot?
-        # lineii = (spectrum[musical:], snippet[musical:], 'g-', 'snippet')
-        # lines.append(lineii)
-        #
-        # # add labels
-        # title = 'fourier transform of {}'.format(name)
-        # independent = 'frequency'
-        # dependent = 'amplitude'
-        # texts = [title, independent, dependent]
-        #
-        # # make destination
-        # destination = 'plots/{}.png'.format(name)
-        #
-        # # draw it
-        # self._draw(lines, texts, destination)
-        #
-        # # search for peaks
-        # peaking = lambda series, index: series[index] > series[index - 1] and series[index] > series[index + 1]
-        # peaks = [index + 1 for index, _ in enumerate(fourier[1:-1])if peaking(fourier, index + 1)]
-        #
-        # # print the frequencies
-        # notes = [spectrum[peak] for peak in peaks if spectrum[peak] > 500]
-        # scores = [self._resonate(note) for note in notes]
-        # [print('{} Htz: {} ({})'.format(note, *score[0])) for note, score in zip(notes, scores)]
 
-        #return None
 
 
 #
