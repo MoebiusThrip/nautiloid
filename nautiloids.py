@@ -476,7 +476,17 @@ class Nautiloid(list):
         return None
 
     def ink(self, measure, sixteenth):
-        """Draw the spectrum for the particular sixteenth."""
+        """Draw the spectrum for the particular sixteenth.
+        
+        Arguments:
+            measure: int, measure index
+            sixteenth: int, sixteenth index
+
+        Returns:
+            None
+        """
+
+        return None
 
     def undulate(self, name):
         """Get the frequency spectrum for a snippet of a song.
