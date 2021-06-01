@@ -45,10 +45,10 @@ class Nautiloid(list):
         self.audible = (0, 0)
         self._tune()
 
-        # default song parameters
-        self.measures = 40
+        # current song parameters
         self.name = ''
         self.rate = 0
+        self.size = 0
         self.length = 0
 
         # store fourier analysis
@@ -217,6 +217,26 @@ class Nautiloid(list):
 
         return None
 
+    def _dump(self, contents, destination):
+        """Dump a dictionary into a json file.
+
+        Arguments:
+            contents: dict
+            destination: str, destination file path
+
+        Returns:
+            None
+        """
+
+        # dump file
+        with open(destination, 'w') as pointer:
+
+            # dump contents
+            print('dumping into {}...'.format(destination))
+            json.dump(contents, pointer)
+
+        return None
+
     def _forget(self):
         """Depopulate current song.
 
@@ -260,50 +280,34 @@ class Nautiloid(list):
 
         return grid
 
-    def _listen(self, name):
-        """Get a wave file by listening to a song.
+    def _load(self, path):
+        """Load a json file.
 
         Arguments:
-            name: partial song title
+            path: str, file path
 
         Returns:
-            None
+            dict
         """
 
-        # forget current song
-        self._forget()
+        # try to
+        try:
 
-        # get all paths
-        paths = self._see(self.directory)
+            # open json file
+            with open(path, 'r') as pointer:
 
-        # get all paths with the name, assuming the first is correct
-        song = [path for path in paths if name.lower() in path.lower()][0]
+                # get contents
+                print('loading {}...'.format(path))
+                contents = json.load(pointer)
 
-        # start clock
-        self._stamp('listening to {}...'.format(song), initial=True)
+        # unless the file does not exit
+        except FileNotFoundError:
 
-        # open the wave file
-        rate, data = wavfile.read(song)
+            # in which case return empty json
+            print('creating {}...'.format(path))
+            contents = {}
 
-        # set song parameters
-        self.name = name
-        self.rate = rate
-        self.length = len(data)
-
-        # combine both channels
-        data = [sum(datum) for datum in data]
-
-        # chop into measures and then into sixteenths
-        measures = self._dice(data, self.measures)
-        sixteenths = [self._dice(measure, 16) for measure in measures]
-
-        # populate
-        [self.append(measure) for measure in sixteenths]
-
-        # timestamp
-        self._stamp('listened.')
-
-        return None
+        return contents
 
     def _normalize(self, data):
         """Normalize a list of data to its z-scores.
@@ -515,7 +519,7 @@ class Nautiloid(list):
 
         return None
 
-    def forage(self, fourier, spectrum, faintness=0.1):
+    def forage(self, fourier, spectrum, faintness=1.0):
         """Find the peaks in the fourier spectrum.
 
         Arguments:
@@ -537,7 +541,7 @@ class Nautiloid(list):
 
         # score each peak and print
         scores = [self._resonate(spectrum[peak], fourier[peak]) for peak in peaks]
-        [print('{} Htz, {} ({}): {}'.format(*score[0])) for score in scores]
+        [print('{} Htz, {} std ({} cents): {}'.format(*score[0])) for score in scores]
 
         return None
 
@@ -609,20 +613,106 @@ class Nautiloid(list):
 
         return None
 
-    def undulate(self, name):
-        """Get the frequency spectrum for a snippet of a song.
+    def listen(self, name, size=44):
+        """Get a wave file by listening to a song.
 
         Arguments:
-            name: (partial) name of song
+            name: partial song title
 
         Returns:
             None
         """
 
-        # listen to the song
-        self._listen(name)
+        # forget current song
+        self._forget()
+
+        # get all paths
+        paths = self._see(self.directory)
+
+        # get all paths with the name, assuming the first is correct
+        song = [path for path in paths if name.lower() in path.lower()][0]
+
+        # start clock
+        self._stamp('listening to {}...'.format(song), initial=True)
+
+        # open the wave file
+        rate, data = wavfile.read(song)
+
+        # set song parameters
+        self.name = name
+        self.rate = rate
+        self.size = size
+        self.length = len(data)
+
+        # combine both channels
+        data = [sum(datum) for datum in data]
+
+        # chop into measures and then into sixteenths
+        measures = self._dice(data, size)
+        sixteenths = [self._dice(measure, 16) for measure in measures]
+
+        # populate
+        [self.append(measure) for measure in sixteenths]
+
+        # timestamp
+        self._stamp('listened.')
+
+        # print stats
         print('length: {} frames, {} seconds'.format(self.length, round(self.length / self.rate), 2))
         print('sampling rate: {} frames / s'.format(self.rate))
+
+        return None
+
+    def memorize(self):
+        """Store the fourier analysis results
+
+        Arguments:
+            None
+
+        Returns:
+            None
+        """
+
+        # convert current fourier into floats
+        memory = [[[float(amplitude) for amplitude in sixteenth] for sixteenth in measure] for measure in self.fourier]
+
+        # store in fouriers
+        destination = 'fouriers/{}_fourier.json'.format(self.name)
+        self._dump(memory, destination)
+
+        return None
+
+    def recognize(self):
+        """Load in previous fourier analysis for this song.
+
+        Arguments:
+            None
+
+        Returns:
+            None
+        """
+
+        # construct file path
+        path = 'fouriers/{}_fourier.json'.format(self.name)
+        memory = self._load(path)
+
+        # convert to numpy arrays
+        fourier = [[numpy.array(sixteenth) for sixteenth in measure] for measure in memory]
+
+        # set attribute
+        self.fourier = fourier
+
+        return None
+
+    def undulate(self):
+        """Get the frequency spectrum for a snippet of a song.
+
+        Arguments:
+            None
+
+        Returns:
+            None
+        """
 
         # compute index grid
         grid = self._lay()
@@ -656,39 +746,3 @@ class Nautiloid(list):
 
         return None
 
-
-
-#
-# # read in the file
-# frequency, data = wavfile.read('gems/Lichenthrope.wav')
-#
-# # extract data
-# times = list(range(len(data)))
-# mono = [float(stereo[0]) for stereo in data]
-# duo = [float(stereo[1]) for stereo in data]
-#
-# # set start and finish
-# start = 0
-# finish = 200000
-#
-# # plot
-# pyplot.clf()
-# pyplot.plot(times[start:finish], mono[start:finish], 'b--')
-# pyplot.plot(times[start:finish], duo[start:finish], 'g--')
-# pyplot.savefig('plots/testo.png')
-#
-# # apply fade
-# chunk = int(0.1 * len(data))
-# denouement = data[:chunk]
-#
-# # generate fade
-# fade = [exp(-(index ** 2) / (chunk ** 2)) for index, _ in enumerate(denouement)]
-# fade = [[value, value] for value in fade]
-# denouement = denouement * fade
-# denouement = denouement.astype('int16')
-#
-# # concatenate
-# combo = numpy.concatenate([data, denouement], axis=0)
-#
-# # rewrite file
-# wavfile.write('gems/Lichenthrope_fade.wav', frequency, combo)
