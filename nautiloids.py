@@ -477,7 +477,7 @@ class Nautiloid(list):
 
     def ink(self, measure, sixteenth):
         """Draw the spectrum for the particular sixteenth.
-        
+
         Arguments:
             measure: int, measure index
             sixteenth: int, sixteenth index
